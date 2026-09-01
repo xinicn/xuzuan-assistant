@@ -1,0 +1,6 @@
+aiohttp==3.13.5
+pycryptodome==3.23.0
+PySide6==6.10.3
+qasync==0.28.0
+requests>=2.31,<3
+websockets==15.0.1

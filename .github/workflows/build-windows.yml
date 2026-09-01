@@ -1,0 +1,114 @@
+name: Build Windows App
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "xuzuan-v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          architecture: "x64"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt pyinstaller==6.21.0 pillow==11.3.0
+
+      - name: Create Windows icon
+        shell: python
+        run: |
+          from PIL import Image
+          image = Image.open("assets/app_icon.png").convert("RGBA")
+          image.save(
+              "assets/app_icon.ico",
+              format="ICO",
+              sizes=[(16, 16), (24, 24), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)],
+          )
+
+      - name: Build application
+        run: >-
+          python -m PyInstaller
+          --noconfirm
+          --clean
+          --windowed
+          --onedir
+          --name "续赚抢单助手"
+          --icon "assets/app_icon.ico"
+          --add-data "assets/app_icon.png;assets"
+          xuzuan_v3.py
+
+      - name: Verify packaged application
+        shell: pwsh
+        run: |
+          $appDir = "dist\续赚抢单助手"
+          $exe = Join-Path $appDir "续赚抢单助手.exe"
+          if (-not (Test-Path $exe)) {
+            throw "Application executable was not created."
+          }
+          $webEngine = Get-ChildItem $appDir -Recurse -Filter "QtWebEngineProcess.exe"
+          if (-not $webEngine) {
+            throw "Qt WebEngine helper was not packaged."
+          }
+          $process = Start-Process -FilePath $exe -PassThru
+          Start-Sleep -Seconds 15
+          if ($process.HasExited) {
+            throw "Application exited during the startup check with code $($process.ExitCode)."
+          }
+          Stop-Process -Id $process.Id -Force
+
+      - name: Create portable package
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path release | Out-Null
+          Compress-Archive -Path "dist\续赚抢单助手" -DestinationPath "release\Xuzuan-Assistant-Portable-x64.zip"
+
+      - name: Create installer
+        shell: pwsh
+        run: |
+          Invoke-WebRequest `
+            -Uri "https://raw.githubusercontent.com/jrsoftware/issrc/1ae7bf81dc0d2013235dfe4bb0b6f4e4a0b6b25c/Files/Languages/ChineseSimplified.isl" `
+            -OutFile "build\windows\ChineseSimplified.isl"
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) {
+            throw "Inno Setup compiler was not found."
+          }
+          $version = if ($env:GITHUB_REF_NAME -like "xuzuan-v*") {
+            $env:GITHUB_REF_NAME -replace "^xuzuan-v", ""
+          } else {
+            "1.0.0"
+          }
+          & $iscc "/DMyAppVersion=$version" "build\windows\installer.iss"
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: xuzuan-windows-x64
+          path: release/*
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Publish tagged release
+        if: startsWith(github.ref, 'refs/tags/xuzuan-v')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          gh release create "${{ github.ref_name }}"
+          release/*
+          --title "续赚抢单助手 ${{ github.ref_name }}"
+          --notes "Windows 10/11 x64 安装版与免安装便携版。账号、密码、开放接口密钥和商品编号不会写入安装包。"

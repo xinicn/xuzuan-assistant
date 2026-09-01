@@ -1,0 +1,24 @@
+.DS_Store
+__pycache__/
+*.py[cod]
+*.log
+
+# Local Python environments
+.venv*/
+venv/
+
+# Local credentials and runtime state
+config.json
+.env
+.env.*
+web_profile/
+
+# Windows packaging output
+dist/
+release/
+*.spec
+assets/app_icon.ico
+
+# Editor settings
+.idea/
+.vscode/
